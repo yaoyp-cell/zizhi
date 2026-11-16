@@ -1,0 +1,53 @@
+/* 事项到期提醒 · 离线缓存
+   策略：网络优先，失败回落到缓存；页面本身始终能离线打开。 */
+var CACHE = "memo-reminder-v1";
+var ASSETS = [
+  "./",
+  "./index.html",
+  "./manifest.webmanifest",
+  "./icon-192.png",
+  "./icon-512.png",
+  "./icon-maskable-512.png"
+];
+
+self.addEventListener("install", function (e) {
+  e.waitUntil(
+    caches.open(CACHE).then(function (c) {
+      return c.addAll(ASSETS);
+    }).then(function () {
+      return self.skipWaiting();
+    })
+  );
+});
+
+self.addEventListener("activate", function (e) {
+  e.waitUntil(
+    caches.keys().then(function (keys) {
+      return Promise.all(keys.map(function (k) {
+        if (k !== CACHE) return caches.delete(k);
+      }));
+    }).then(function () {
+      return self.clients.claim();
+    })
+  );
+});
+
+self.addEventListener("fetch", function (e) {
+  var req = e.request;
+  if (req.method !== "GET") return;
+
+  e.respondWith(
+    fetch(req).then(function (res) {
+      if (res && res.ok && res.type === "basic") {
+        var copy = res.clone();
+        caches.open(CACHE).then(function (c) { c.put(req, copy); });
+      }
+      return res;
+    }).catch(function () {
+      return caches.match(req).then(function (hit) {
+        if (hit) return hit;
+        return caches.match("./index.html");
+      });
+    })
+  );
+});
